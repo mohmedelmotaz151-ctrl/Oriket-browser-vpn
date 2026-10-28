@@ -1,6 +1,10 @@
 package com.orkeit.browservpn
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.net.VpnService
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Bitmap
 import android.app.DownloadManager
 import android.content.Context
@@ -18,6 +22,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -41,6 +47,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import java.net.URLEncoder
+
+private fun readVpnConfig(context: Context): String? = try {
+    context.openFileInput("oriket-wireguard.conf").bufferedReader().use { it.readText() }
+} catch (_: Exception) { null }
 
 private val Navy = Color(0xFF101B35)
 private val NavySoft = Color(0xFF1C2B4C)
@@ -91,6 +101,94 @@ private fun OriketBrowserApp() {
     var vpnDialog by remember { mutableStateOf(false) }
     var tabsDialog by remember { mutableStateOf(false) }
     var privateMode by remember { mutableStateOf(false) }
+    var vpnConfig by remember { mutableStateOf(readVpnConfig(context)) }
+    var vpnConnected by remember { mutableStateOf(false) }
+    var vpnStatus by remember { mutableStateOf(if (vpnConfig.isNullOrBlank()) "لم يتم إعداد VPN" else "تم تحميل إعداد WireGuard") }
+    var pendingVpnConnect by remember { mutableStateOf(false) }
+
+    fun connectVpnNow() {
+        val configText = vpnConfig
+        if (configText.isNullOrBlank()) {
+            vpnStatus = "استورد ملف إعداد WireGuard أولًا"
+            vpnDialog = true
+            return
+        }
+        val validationError = WireGuardController.validateConfig(configText)
+        if (validationError != null) {
+            vpnStatus = validationError
+            vpnConnected = false
+            return
+        }
+        vpnStatus = "جارٍ الاتصال..."
+        WireGuardController.connect(context, configText) { connected, message ->
+            Handler(Looper.getMainLooper()).post {
+                vpnConnected = connected
+                vpnStatus = message
+                pendingVpnConnect = false
+            }
+        }
+    }
+
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK && pendingVpnConnect) {
+            connectVpnNow()
+        } else {
+            pendingVpnConnect = false
+            vpnStatus = "لم يتم منح إذن VPN"
+        }
+    }
+
+    val importVpnLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                val imported = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalStateException("تعذر قراءة الملف")
+                val validationError = WireGuardController.validateConfig(imported)
+                if (validationError != null) {
+                    vpnStatus = validationError
+                    Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
+                } else {
+                    context.openFileOutput("oriket-wireguard.conf", Context.MODE_PRIVATE).bufferedWriter().use { it.write(imported) }
+                    vpnConfig = imported
+                    vpnStatus = "تم استيراد إعداد WireGuard بنجاح"
+                    Toast.makeText(context, "تم استيراد الإعداد", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Exception) {
+                vpnStatus = error.localizedMessage ?: "تعذر استيراد الملف"
+                Toast.makeText(context, vpnStatus, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun requestVpnConnection() {
+        val configText = vpnConfig
+        if (configText.isNullOrBlank()) {
+            vpnStatus = "استورد ملف إعداد WireGuard أولًا"
+            return
+        }
+        val validationError = WireGuardController.validateConfig(configText)
+        if (validationError != null) {
+            vpnStatus = validationError
+            return
+        }
+        val consentIntent = VpnService.prepare(context)
+        if (consentIntent != null) {
+            pendingVpnConnect = true
+            vpnPermissionLauncher.launch(consentIntent)
+        } else {
+            connectVpnNow()
+        }
+    }
+
+    fun disconnectVpn() {
+        vpnStatus = "جارٍ قطع الاتصال..."
+        WireGuardController.disconnect { success, message ->
+            Handler(Looper.getMainLooper()).post {
+                vpnConnected = !success
+                vpnStatus = message
+            }
+        }
+    }
     var webView by remember { mutableStateOf<WebView?>(null) }
     val bookmarks = remember { mutableStateListOf<Pair<String, String>>().apply { addAll(readPairs(context, "bookmarks")) } }
     val history = remember { mutableStateListOf<Pair<String, String>>().apply { addAll(readPairs(context, "history")) } }
@@ -143,7 +241,7 @@ private fun OriketBrowserApp() {
     ) {
         Column(Modifier.fillMaxSize().background(Canvas)) {
             Header(
-                vpnOn = false,
+                vpnOn = vpnConnected,
                 privateMode = privateMode,
                 tabCount = tabCount,
                 onVpn = { vpnDialog = true },
@@ -345,8 +443,30 @@ private fun OriketBrowserApp() {
                 onDismissRequest = { vpnDialog = false },
                 icon = { Icon(Icons.Default.Shield, null, tint = Red, modifier = Modifier.size(34.dp)) },
                 title = { Text("Oriket VPN", fontWeight = FontWeight.Bold, color = Navy) },
-                text = { Text("واجهة VPN قيد التصميم. الاتصال الآمن لن يتفعّل حتى يتم ربط التطبيق بخادم أو مزوّد VPN فعلي.") },
-                confirmButton = { TextButton(onClick = { vpnDialog = false }) { Text("حسنًا", color = Red) } },
+                text = {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text("الحالة: " + vpnStatus, color = if (vpnConnected) Color(0xFF16845B) else Navy, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(10.dp))
+                        Text("يتطلب الاتصال الحقيقي ملف إعداد WireGuard (.conf) من مزود VPN أو خادم تملكه. لا يتضمن التطبيق خادم VPN مجانيًا تلقائيًا.")
+                        Spacer(Modifier.height(12.dp))
+                        TextButton(onClick = { importVpnLauncher.launch(arrayOf("*/*")) }) {
+                            Icon(Icons.Default.UploadFile, null, tint = Red)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (vpnConfig == null) "استيراد ملف إعداد WireGuard" else "استبدال ملف الإعداد", color = Red)
+                        }
+                        if (vpnConfig != null) Text("ملف الإعداد محفوظ داخل مساحة التطبيق الخاصة.", color = Muted, fontSize = 10.sp)
+                    }
+                },
+                confirmButton = {
+                    if (vpnConnected) {
+                        TextButton(onClick = { disconnectVpn() }) { Text("قطع الاتصال", color = Red) }
+                    } else {
+                        TextButton(onClick = { requestVpnConnection() }, enabled = !vpnConfig.isNullOrBlank()) {
+                            Text("اتصال VPN", color = if (vpnConfig.isNullOrBlank()) Muted else Red)
+                        }
+                    }
+                },
+                dismissButton = { TextButton(onClick = { vpnDialog = false }) { Text("إغلاق", color = Navy) } },
                 shape = RoundedCornerShape(24.dp),
                 containerColor = Color.White
             )
