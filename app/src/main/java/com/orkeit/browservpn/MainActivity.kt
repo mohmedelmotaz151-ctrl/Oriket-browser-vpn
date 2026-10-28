@@ -177,6 +177,7 @@ private fun OriketBrowserApp() {
                         Icon(Icons.Default.BookmarkBorder, "إضافة للمفضلة", tint = Navy, modifier = Modifier.size(19.dp))
                     }
                 }
+                key(activeTabId) {
                 AndroidView(
                     modifier = Modifier.weight(1f).fillMaxWidth().background(Color.White),
                     factory = { context ->
@@ -227,6 +228,7 @@ private fun OriketBrowserApp() {
                     },
                     update = { webView = it }
                 )
+                }
             } else {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when (section) {
