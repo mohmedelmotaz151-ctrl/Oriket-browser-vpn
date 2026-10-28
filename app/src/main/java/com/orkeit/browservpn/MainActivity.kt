@@ -2,6 +2,13 @@ package com.orkeit.browservpn
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.app.DownloadManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import org.json.JSONArray
+import org.json.JSONObject
 import android.os.Bundle
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -52,6 +59,24 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class BrowserSection { HOME, BOOKMARKS, HISTORY, DOWNLOADS }
+private data class BrowserTab(val id: Int, val url: String? = null, val title: String = "علامة تبويب جديدة")
+private data class BrowserDownload(val name: String, val url: String, val id: Long)
+
+private fun readPairs(context: Context, key: String): List<Pair<String, String>> = try {
+    val raw = context.getSharedPreferences("orkeit_browser", Context.MODE_PRIVATE).getString(key, "[]") ?: "[]"
+    val array = JSONArray(raw)
+    (0 until array.length()).mapNotNull { index ->
+        val item = array.optJSONObject(index) ?: return@mapNotNull null
+        val title = item.optString("title")
+        if (title.isBlank()) null else title to item.optString("url")
+    }
+} catch (_: Exception) { emptyList() }
+
+private fun savePairs(context: Context, key: String, items: List<Pair<String, String>>) {
+    val array = JSONArray()
+    items.take(500).forEach { (title, url) -> array.put(JSONObject().put("title", title).put("url", url)) }
+    context.getSharedPreferences("orkeit_browser", Context.MODE_PRIVATE).edit().putString(key, array.toString()).apply()
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -63,24 +88,49 @@ private fun OriketBrowserApp() {
     var section by remember { mutableStateOf(BrowserSection.HOME) }
     var tabCount by remember { mutableIntStateOf(1) }
     var vpnDialog by remember { mutableStateOf(false) }
+    var tabsDialog by remember { mutableStateOf(false) }
     var privateMode by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
-    val bookmarks = remember { mutableStateListOf<Pair<String, String>>() }
-    val history = remember { mutableStateListOf<Pair<String, String>>() }
+    val bookmarks = remember { mutableStateListOf<Pair<String, String>>().apply { addAll(readPairs(context, "bookmarks")) } }
+    val history = remember { mutableStateListOf<Pair<String, String>>().apply { addAll(readPairs(context, "history")) } }
+    val downloads = remember { mutableStateListOf<BrowserDownload>() }
+    val tabs = remember { mutableStateListOf(BrowserTab(1)) }
+    var activeTabId by remember { mutableIntStateOf(1) }
+    var nextTabId by remember { mutableIntStateOf(2) }
 
+    fun updateActiveTab(url: String? = null, title: String? = null) {
+        val index = tabs.indexOfFirst { it.id == activeTabId }
+        if (index >= 0) {
+            val old = tabs[index]
+            tabs[index] = old.copy(url = url ?: old.url, title = title ?: old.title)
+        }
+    }
+    fun openNewTab() {
+        val id = nextTabId++
+        tabs.add(BrowserTab(id))
+        activeTabId = id
+        tabCount = tabs.size
+        currentUrl = null
+        address = ""
+        pageTitle = ""
+        webView = null
+        section = BrowserSection.HOME
+        tabsDialog = false
+    }
     fun navigate(raw: String) {
         val value = raw.trim()
         if (value.isBlank()) return
         val target = when {
-            value.startsWith("https://") || value.startsWith("http://") -> value
+            value.startsWith("https://", true) || value.startsWith("http://", true) -> value
             value.contains(".") && !value.contains(" ") -> "https://$value"
             else -> "https://www.google.com/search?q=" + URLEncoder.encode(value, "UTF-8")
         }
         address = target
         currentUrl = target
+        pageTitle = target
         section = BrowserSection.HOME
+        updateActiveTab(target, target)
         webView?.loadUrl(target)
-        if (!privateMode) history.add(0, (value to target))
     }
 
     BackHandler(enabled = currentUrl != null && webView?.canGoBack() == true) {
