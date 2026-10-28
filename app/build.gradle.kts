@@ -23,6 +23,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -39,5 +40,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
