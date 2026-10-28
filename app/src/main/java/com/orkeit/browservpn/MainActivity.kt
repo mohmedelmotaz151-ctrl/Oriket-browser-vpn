@@ -147,7 +147,7 @@ private fun OriketBrowserApp() {
                 tabCount = tabCount,
                 onVpn = { vpnDialog = true },
                 onPrivate = { privateMode = !privateMode },
-                onTabs = { tabCount = (tabCount + 1).coerceAtMost(99) }
+                onTabs = { tabsDialog = true }
             )
 
             AddressBar(
@@ -170,6 +170,7 @@ private fun OriketBrowserApp() {
                         val url = currentUrl
                         if (url != null && bookmarks.none { it.second == url }) {
                             bookmarks.add(0, (pageTitle.ifBlank { url } to url))
+                            savePairs(context, "bookmarks", bookmarks.toList())
                             Toast.makeText(context, "تمت الإضافة للمفضلة", Toast.LENGTH_SHORT).show()
                         }
                     }, modifier = Modifier.size(32.dp)) {
@@ -201,6 +202,25 @@ private fun OriketBrowserApp() {
                                     pageTitle = title.orEmpty()
                                 }
                             }
+                            setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                                try {
+                                    val filename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
+                                        .replace(Regex("[^A-Za-z0-9._-]"), "_").take(120).ifBlank { "download" }
+                                    val request = DownloadManager.Request(Uri.parse(url))
+                                        .setTitle(filename)
+                                        .setDescription("Oriket Browser")
+                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+                                    if (mimeType != null) request.setMimeType(mimeType)
+                                    if (userAgent != null) request.addRequestHeader("User-Agent", userAgent)
+                                    android.webkit.CookieManager.getInstance().getCookie(url)?.let { request.addRequestHeader("Cookie", it) }
+                                    val id = (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+                                    downloads.add(0, BrowserDownload(filename, url, id))
+                                    Toast.makeText(context, "بدأ تنزيل " + filename, Toast.LENGTH_SHORT).show()
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "تعذر بدء التنزيل", Toast.LENGTH_SHORT).show()
+                                }
+                            })
                             webView = this
                             loadUrl(currentUrl ?: "https://www.google.com")
                         }
