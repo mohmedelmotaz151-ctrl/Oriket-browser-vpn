@@ -191,12 +191,26 @@ private fun OriketBrowserApp() {
                             webViewClient = object : WebViewClient() {
                                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                     super.onPageStarted(view, url, favicon)
-                                    if (url != null) address = url
+                                    if (url != null) {
+                                        address = url
+                                        currentUrl = url
+                                        updateActiveTab(url, view?.title ?: url)
+                                    }
                                 }
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
-                                    pageTitle = view?.title.orEmpty()
-                                    if (url != null) currentUrl = url
+                                    val title = view?.title?.takeIf { it.isNotBlank() } ?: url.orEmpty()
+                                    pageTitle = title
+                                    if (url != null) {
+                                        currentUrl = url
+                                        address = url
+                                        updateActiveTab(url, title)
+                                        if (!privateMode && url.startsWith("http")) {
+                                            if (history.firstOrNull()?.second != url) history.add(0, title to url)
+                                            while (history.size > 500) history.removeAt(history.lastIndex)
+                                            savePairs(context, "history", history.toList())
+                                        }
+                                    }
                                 }
                             }
                             webChromeClient = object : WebChromeClient() {
