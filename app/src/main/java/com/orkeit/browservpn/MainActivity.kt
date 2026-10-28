@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -55,6 +56,7 @@ private enum class BrowserSection { HOME, BOOKMARKS, HISTORY, DOWNLOADS }
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun OriketBrowserApp() {
+    val context = LocalContext.current
     var address by remember { mutableStateOf("") }
     var currentUrl by remember { mutableStateOf<String?>(null) }
     var pageTitle by remember { mutableStateOf("") }
@@ -94,7 +96,7 @@ private fun OriketBrowserApp() {
                 privateMode = privateMode,
                 tabCount = tabCount,
                 onVpn = { vpnDialog = true },
-                onPrivate = { privateMode = !privateMode; if (privateMode) history.clear() },
+                onPrivate = { privateMode = !privateMode },
                 onTabs = { tabCount = (tabCount + 1).coerceAtMost(99) }
             )
 
@@ -118,7 +120,7 @@ private fun OriketBrowserApp() {
                         val url = currentUrl
                         if (url != null && bookmarks.none { it.second == url }) {
                             bookmarks.add(0, (pageTitle.ifBlank { url } to url))
-                            Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "تمت الإضافة للمفضلة", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "تمت الإضافة للمفضلة", Toast.LENGTH_SHORT).show()
                         }
                     }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.BookmarkBorder, "إضافة للمفضلة", tint = Navy, modifier = Modifier.size(19.dp))
