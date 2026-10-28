@@ -235,9 +235,12 @@ private fun OriketBrowserApp() {
                             onQuickLink = { navigate(it) },
                             onVpn = { vpnDialog = true }
                         )
-                        BrowserSection.BOOKMARKS -> SavedList("المفضلة", bookmarks, onOpen = { navigate(it) }, empty = "لم تحفظ مواقع بعد")
-                        BrowserSection.HISTORY -> SavedList("سجل التصفح", history, onOpen = { navigate(it) }, empty = "لا يوجد سجل تصفح")
-                        BrowserSection.DOWNLOADS -> DownloadsContent()
+                        BrowserSection.BOOKMARKS -> SavedList("المفضلة", bookmarks, onOpen = { navigate(it) }, empty = "لم تحفظ مواقع بعد", onDelete = { item -> bookmarks.remove(item); savePairs(context, "bookmarks", bookmarks.toList()) })
+                        BrowserSection.HISTORY -> SavedList("سجل التصفح", history, onOpen = { navigate(it) }, empty = "لا يوجد سجل تصفح", onDelete = { item -> history.remove(item); savePairs(context, "history", history.toList()) }, onClear = { history.clear(); savePairs(context, "history", emptyList()) })
+                        BrowserSection.DOWNLOADS -> DownloadsContent(downloads, onOpenDownloads = {
+                            try { context.startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) }
+                            catch (_: Exception) { Toast.makeText(context, "افتح التنزيلات من مدير الملفات", Toast.LENGTH_SHORT).show() }
+                        })
                     }
                 }
             }
@@ -247,7 +250,69 @@ private fun OriketBrowserApp() {
                 onSection = { section = it; if (it != BrowserSection.HOME) { currentUrl = null } },
                 onBack = { if (webView?.canGoBack() == true) webView?.goBack() },
                 onForward = { if (webView?.canGoForward() == true) webView?.goForward() },
-                onHome = { currentUrl = null; section = BrowserSection.HOME }
+                onHome = { currentUrl = null; address = ""; pageTitle = ""; section = BrowserSection.HOME }
+            )
+        }
+
+        if (tabsDialog) {
+            AlertDialog(
+                onDismissRequest = { tabsDialog = false },
+                title = { Text("علامات التبويب (" + tabs.size + ")", color = Navy, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth().clickable { openNewTab() }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Add, null, tint = Red)
+                            Spacer(Modifier.width(10.dp))
+                            Text("فتح تبويب جديد", color = Navy, fontWeight = FontWeight.SemiBold)
+                        }
+                        Divider()
+                        LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                            items(tabs, key = { it.id }) { tab ->
+                                Row(Modifier.fillMaxWidth().clickable {
+                                    activeTabId = tab.id
+                                    currentUrl = tab.url
+                                    address = tab.url.orEmpty()
+                                    pageTitle = tab.title
+                                    section = BrowserSection.HOME
+                                    webView = null
+                                    tabsDialog = false
+                                }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Language, null, tint = if (tab.id == activeTabId) Red else Muted)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(tab.title, color = Navy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(tab.url ?: "صفحة جديدة", color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    IconButton(onClick = {
+                                        if (tabs.size == 1) {
+                                            tabs[0] = BrowserTab(tab.id)
+                                            activeTabId = tab.id
+                                            currentUrl = null
+                                            address = ""
+                                            pageTitle = ""
+                                            webView = null
+                                        } else {
+                                            val wasActive = activeTabId == tab.id
+                                            val index = tabs.indexOfFirst { it.id == tab.id }
+                                            tabs.remove(tab)
+                                            if (wasActive) {
+                                                val next = tabs.getOrNull((index - 1).coerceAtLeast(0)) ?: tabs.first()
+                                                activeTabId = next.id
+                                                currentUrl = next.url
+                                                address = next.url.orEmpty()
+                                                pageTitle = next.title
+                                                webView = null
+                                            }
+                                        }
+                                        tabCount = tabs.size
+                                    }, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.Close, "إغلاق التبويب", tint = Muted) }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { tabsDialog = false }) { Text("تم", color = Red) } },
+                shape = RoundedCornerShape(22.dp), containerColor = Color.White
             )
         }
 
@@ -430,10 +495,15 @@ private fun FeatureRow(icon: androidx.compose.ui.graphics.vector.ImageVector, ti
 }
 
 @Composable
-private fun SavedList(title: String, items: List<Pair<String, String>>, onOpen: (String) -> Unit, empty: String) {
+private fun SavedList(title: String, items: List<Pair<String, String>>, onOpen: (String) -> Unit, empty: String, onDelete: (Pair<String, String>) -> Unit = {}, onClear: (() -> Unit)? = null) {
     Column(Modifier.fillMaxSize().background(Canvas).padding(18.dp)) {
         Text(title, color = Navy, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(14.dp))
+        if (onClear != null && items.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onClear) { Text("مسح السجل", color = Red) }
+            }
+        }
         if (items.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -453,6 +523,9 @@ private fun SavedList(title: String, items: List<Pair<String, String>>, onOpen: 
                                 Text(item.first, color = Navy, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(item.second, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
+                            IconButton(onClick = { onDelete(item) }, modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Default.DeleteOutline, "حذف", tint = Muted, modifier = Modifier.size(18.dp))
+                            }
                             Icon(Icons.Default.ChevronRight, null, tint = Muted)
                         }
                     }
@@ -463,15 +536,36 @@ private fun SavedList(title: String, items: List<Pair<String, String>>, onOpen: 
 }
 
 @Composable
-private fun DownloadsContent() {
+private fun DownloadsContent(downloads: List<BrowserDownload>, onOpenDownloads: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Canvas).padding(20.dp)) {
-        Text("التنزيلات", color = Navy, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-        Spacer(Modifier.height(18.dp))
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Download, null, tint = Muted, modifier = Modifier.size(45.dp))
-                Spacer(Modifier.height(12.dp))
-                Text("ستظهر الملفات التي تنزّلها هنا", color = Muted, fontSize = 13.sp, textAlign = TextAlign.Center)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("التنزيلات", color = Navy, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            TextButton(onClick = onOpenDownloads) { Text("مدير التنزيلات", color = Red) }
+        }
+        Spacer(Modifier.height(12.dp))
+        if (downloads.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Download, null, tint = Muted, modifier = Modifier.size(45.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("لا توجد تنزيلات في هذه الجلسة", color = Muted, fontSize = 13.sp, textAlign = TextAlign.Center)
+                    Text("التنزيلات تظهر أيضًا في مدير تنزيلات Android", color = Muted, fontSize = 10.sp, textAlign = TextAlign.Center)
+                }
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(downloads, key = { it.id }) { item ->
+                    Surface(color = Color.White, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.InsertDriveFile, null, tint = Red)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.name, color = Navy, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("أُرسل إلى مدير تنزيلات Android", color = Muted, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
