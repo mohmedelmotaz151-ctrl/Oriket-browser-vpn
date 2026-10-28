@@ -147,7 +147,14 @@ private fun OriketBrowserApp() {
                 privateMode = privateMode,
                 tabCount = tabCount,
                 onVpn = { vpnDialog = true },
-                onPrivate = { privateMode = !privateMode },
+                onPrivate = {
+                    privateMode = !privateMode
+                    if (!privateMode) {
+                        webView?.clearHistory()
+                        webView?.clearCache(true)
+                        Toast.makeText(context, "الوضع الخاص لا يحفظ السجل؛ قد تظل المواقع تستخدم ملفات تعريف الارتباط.", Toast.LENGTH_LONG).show()
+                    }
+                },
                 onTabs = { tabsDialog = true }
             )
 
