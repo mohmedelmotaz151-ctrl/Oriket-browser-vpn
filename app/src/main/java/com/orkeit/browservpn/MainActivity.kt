@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import java.net.URLEncoder
+import java.net.URL
 
 private fun readVpnConfig(context: Context): String? = try {
     context.openFileInput("oriket-wireguard.conf").bufferedReader().use { it.readText() }
@@ -103,6 +104,7 @@ private fun OriketBrowserApp() {
     var privateMode by remember { mutableStateOf(false) }
     var vpnConfig by remember { mutableStateOf(readVpnConfig(context)) }
     var vpnConnected by remember { mutableStateOf(false) }
+    var vpnPublicIp by remember { mutableStateOf<String?>(null) }
     var vpnStatus by remember { mutableStateOf(if (vpnConfig.isNullOrBlank()) "لم يتم إعداد VPN" else "تم تحميل إعداد WireGuard") }
     var pendingVpnConnect by remember { mutableStateOf(false) }
 
@@ -125,6 +127,21 @@ private fun OriketBrowserApp() {
                 vpnConnected = connected
                 vpnStatus = message
                 pendingVpnConnect = false
+                if (connected) {
+                    Thread {
+                        val detectedIp = try {
+                            URL("https://api.ipify.org").openConnection().apply {
+                                connectTimeout = 6000
+                                readTimeout = 6000
+                            }.getInputStream().bufferedReader().use { it.readText().trim() }
+                        } catch (_: Exception) { "" }
+                        Handler(Looper.getMainLooper()).post {
+                            vpnPublicIp = detectedIp.takeIf { it.matches(Regex("\\d{1,3}(\\.\\d{1,3}){3}")) }
+                        }
+                    }.start()
+                } else {
+                    vpnPublicIp = null
+                }
             }
         }
     }
@@ -187,6 +204,15 @@ private fun OriketBrowserApp() {
                 vpnConnected = !success
                 vpnStatus = message
             }
+        }
+    }
+
+    // Automatically reconnect on app launch when a valid configuration was saved previously.
+    LaunchedEffect(Unit) {
+        if (!vpnConfig.isNullOrBlank()) {
+            requestVpnConnection()
+        } else {
+            vpnStatus = "يلزم إعداد خادم VPN مرة واحدة"
         }
     }
     var webView by remember { mutableStateOf<WebView?>(null) }
@@ -447,7 +473,11 @@ private fun OriketBrowserApp() {
                     Column(Modifier.fillMaxWidth()) {
                         Text("الحالة: " + vpnStatus, color = if (vpnConnected) Color(0xFF16845B) else Navy, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(10.dp))
-                        Text("يتطلب الاتصال الحقيقي ملف إعداد WireGuard (.conf) من مزود VPN أو خادم تملكه. لا يتضمن التطبيق خادم VPN مجانيًا تلقائيًا.")
+                        if (vpnConnected && vpnPublicIp != null) {
+                            Text("عنوان IP العام عبر الاتصال: " + vpnPublicIp, color = Color(0xFF16845B), fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        Text("يتصل التطبيق تلقائيًا عند التشغيل إذا سبق حفظ ملف WireGuard صالح. إنشاء عنوان IP عام يتطلب خادم VPN أو مزودًا فعليًا؛ التطبيق لا يستطيع توليد IP من دون خادم.")
                         Spacer(Modifier.height(12.dp))
                         TextButton(onClick = { importVpnLauncher.launch(arrayOf("*/*")) }) {
                             Icon(Icons.Default.UploadFile, null, tint = Red)
