@@ -67,11 +67,37 @@ private val Muted = Color(0xFF7B8497)
 private val Line = Color(0xFFE5E9F1)
 
 class MainActivity : ComponentActivity() {
+    private var appOpenAdManager: AppOpenAdManager? = null
+    private var activityStarted = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(16, 27, 53)
         window.navigationBarColor = android.graphics.Color.rgb(16, 27, 53)
         setContent { OriketBrowserApp() }
+
+        com.google.android.gms.ads.MobileAds.initialize(this) {
+            runOnUiThread {
+                val manager = AppOpenAdManager(applicationContext)
+                appOpenAdManager = manager
+                manager.loadAd {
+                    if (activityStarted && !isFinishing && !isDestroyed) {
+                        manager.showAdIfAvailable(this)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        activityStarted = true
+        appOpenAdManager?.showAdIfAvailable(this)
+    }
+
+    override fun onStop() {
+        activityStarted = false
+        super.onStop()
     }
 }
 
