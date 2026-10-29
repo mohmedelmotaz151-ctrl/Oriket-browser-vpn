@@ -68,7 +68,7 @@ private val Line = Color(0xFFE5E9F1)
 
 class MainActivity : ComponentActivity() {
     private var appOpenAdManager: AppOpenAdManager? = null
-    private var activityStarted = false
+    private var activityResumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,7 +81,8 @@ class MainActivity : ComponentActivity() {
                 val manager = AppOpenAdManager(applicationContext)
                 appOpenAdManager = manager
                 manager.loadAd {
-                    if (activityStarted && !isFinishing && !isDestroyed) {
+                    // Only present a full-screen ad when the activity is interactive.
+                    if (activityResumed && !isFinishing && !isDestroyed) {
                         manager.showAdIfAvailable(this)
                     }
                 }
@@ -89,15 +90,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        activityStarted = true
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
         appOpenAdManager?.showAdIfAvailable(this)
     }
 
-    override fun onStop() {
-        activityStarted = false
-        super.onStop()
+    override fun onPause() {
+        activityResumed = false
+        super.onPause()
     }
 }
 
