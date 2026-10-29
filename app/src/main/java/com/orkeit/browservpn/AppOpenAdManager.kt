@@ -17,7 +17,10 @@ import java.util.Date
  * the app process remains alive; ads are refreshed after display and considered
  * stale after four hours.
  */
-internal class AppOpenAdManager(context: Context) {
+internal class AppOpenAdManager(
+    context: Context,
+    private val onAdLoadError: ((LoadAdError) -> Unit)? = null
+) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingCallbacks = mutableListOf<() -> Unit>()
@@ -26,6 +29,7 @@ internal class AppOpenAdManager(context: Context) {
     private var isShowingAd = false
     private var retryScheduled = false
     private var loadTime: Long = 0L
+    private var reportedLoadError = false
 
     fun loadAd(onAdLoaded: (() -> Unit)? = null) {
         if (onAdLoaded != null) {
@@ -48,6 +52,7 @@ internal class AppOpenAdManager(context: Context) {
                     loadTime = Date().time
                     isLoadingAd = false
                     retryScheduled = false
+                    reportedLoadError = false
                     Log.i(TAG, "App-open ad loaded successfully")
                     val callbacks = pendingCallbacks.toList()
                     pendingCallbacks.clear()
@@ -64,6 +69,10 @@ internal class AppOpenAdManager(context: Context) {
                     isLoadingAd = false
                     appOpenAd = null
                     Log.e(TAG, "App-open ad failed to load. Code=${error.code}; domain=${error.domain}; message=${error.message}")
+                    if (!reportedLoadError) {
+                        reportedLoadError = true
+                        onAdLoadError?.invoke(error)
+                    }
                     scheduleRetry()
                 }
             }
@@ -108,6 +117,7 @@ internal class AppOpenAdManager(context: Context) {
                 isShowingAd = false
                 appOpenAd = null
                 Log.e(TAG, "App-open ad failed to show. Code=${error.code}; domain=${error.domain}; message=${error.message}")
+                onAdLoadError?.invoke(LoadAdError(error.code, error.message, error.domain, null, null))
                 loadAd()
             }
         }
