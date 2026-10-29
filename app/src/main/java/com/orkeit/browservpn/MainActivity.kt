@@ -26,6 +26,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -41,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,7 +76,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class BrowserSection { HOME, BOOKMARKS, HISTORY, DOWNLOADS }
-private data class BrowserTab(val id: Int, val url: String? = null, val title: String = "علامة تبويب جديدة")
+private data class BrowserTab(val id: Int, val url: String? = null, val title: String = "علامة تبويب جديدة", val thumbnail: Bitmap? = null)
 private data class BrowserDownload(val name: String, val url: String, val id: Long)
 
 private fun readPairs(context: Context, key: String): List<Pair<String, String>> = try {
@@ -98,6 +101,7 @@ private fun OriketBrowserApp() {
     val context = LocalContext.current
     val hostActivity = context as? Activity
     var address by remember { mutableStateOf("") }
+    var addressFocused by remember { mutableStateOf(false) }
     var currentUrl by remember { mutableStateOf<String?>(null) }
     var pageTitle by remember { mutableStateOf("") }
     var section by remember { mutableStateOf(BrowserSection.HOME) }
@@ -304,8 +308,41 @@ private fun OriketBrowserApp() {
                 value = address,
                 onValueChange = { address = it },
                 onGo = { navigate(address) },
-                onRefresh = { webView?.reload() }
+                onRefresh = { webView?.reload() },
+                onFocusChange = { addressFocused = it }
             )
+
+            if (addressFocused && !privateMode && section == BrowserSection.HOME) {
+                val query = address.trim().lowercase()
+                val suggestions = history.filter { (title, url) ->
+                    query.isBlank() || title.lowercase().contains(query) || url.lowercase().contains(query)
+                }.distinctBy { it.second }.take(6)
+                if (suggestions.isNotEmpty()) {
+                    Column(
+                        Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text(if (query.isBlank()) "المواقع التي زرتها مؤخرًا" else "اقتراحات المواقع", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
+                        suggestions.forEach { item ->
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
+                                    addressFocused = false
+                                    address = item.second
+                                    navigate(item.second)
+                                }.padding(horizontal = 8.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.History, null, tint = Muted, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(9.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.first, color = Navy, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                                    Text(item.second, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 10.sp)
+                                }
+                                Icon(Icons.Default.NorthWest, null, tint = Muted, modifier = Modifier.size(15.dp))
+                            }
+                        }
+                    }
+                }
+            }
 
             if (currentUrl != null && section == BrowserSection.HOME) {
                 Row(
@@ -397,6 +434,19 @@ private fun OriketBrowserApp() {
                                             if (history.firstOrNull()?.second != url) history.add(0, title to url)
                                             while (history.size > 500) history.removeAt(history.lastIndex)
                                             savePairs(context, "history", history.toList())
+                                        }
+                                        view?.post {
+                                            try {
+                                                val source = view
+                                                if (source != null && source.width > 0 && source.height > 0) {
+                                                    val thumb = Bitmap.createBitmap(240, 160, Bitmap.Config.ARGB_8888)
+                                                    val canvas = android.graphics.Canvas(thumb)
+                                                    canvas.scale(240f / source.width, 160f / source.height)
+                                                    source.draw(canvas)
+                                                    val tabIndex = tabs.indexOfFirst { it.id == activeTabId }
+                                                    if (tabIndex >= 0) tabs[tabIndex] = tabs[tabIndex].copy(thumbnail = thumb)
+                                                }
+                                            } catch (_: Exception) { }
                                         }
                                     }
                                 }
@@ -527,9 +577,27 @@ private fun OriketBrowserApp() {
                                 }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Language, null, tint = if (tab.id == activeTabId) Red else Muted)
                                     Spacer(Modifier.width(8.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(tab.title, color = Navy, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(tab.url ?: "صفحة جديدة", color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Column(Modifier.width(92.dp)) {
+                                        Box(
+                                            Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(8.dp)).background(Canvas),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (tab.thumbnail != null) {
+                                                Image(tab.thumbnail.asImageBitmap(), contentDescription = "لقطة من ${tab.title}", modifier = Modifier.fillMaxSize())
+                                            } else {
+                                                Icon(Icons.Default.Language, null, tint = Muted, modifier = Modifier.size(25.dp))
+                                            }
+                                            Surface(
+                                                color = if (tab.id == activeTabId) Red else Navy,
+                                                shape = RoundedCornerShape(topStart = 7.dp, bottomEnd = 7.dp),
+                                                modifier = Modifier.align(Alignment.TopStart)
+                                            ) {
+                                                Text(tab.id.toString(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                            }
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(tab.title, color = Navy, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
+                                        Text(tab.url ?: "صفحة جديدة", color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                     IconButton(onClick = {
                                         if (tabs.size == 1) {
@@ -643,7 +711,7 @@ private fun Header(
 }
 
 @Composable
-private fun AddressBar(value: String, onValueChange: (String) -> Unit, onGo: () -> Unit, onRefresh: () -> Unit) {
+private fun AddressBar(value: String, onValueChange: (String) -> Unit, onGo: () -> Unit, onRefresh: () -> Unit, onFocusChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Navy).padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -657,7 +725,7 @@ private fun AddressBar(value: String, onValueChange: (String) -> Unit, onGo: () 
             androidx.compose.material3.TextField(
                 value = value,
                 onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).onFocusChanged { onFocusChange(it.isFocused) },
                 placeholder = { Text("ابحث أو اكتب عنوان الموقع", fontSize = 12.sp, color = Muted, maxLines = 1) },
                 singleLine = true,
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Ink),
