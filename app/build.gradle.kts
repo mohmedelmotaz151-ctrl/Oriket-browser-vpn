@@ -16,6 +16,25 @@ android {
         versionName = project.findProperty("VERSION_NAME") as String? ?: "1.0.1"
     }
 
+    signingConfigs {
+        create("release") {
+            val storePath = System.getenv("ORKET_KEYSTORE_PATH")
+            if (!storePath.isNullOrBlank()) {
+                storeFile = file(storePath)
+                storePassword = System.getenv("ORKET_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ORKET_KEY_ALIAS")
+                keyPassword = System.getenv("ORKET_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+
     buildFeatures {
         compose = true
     }
