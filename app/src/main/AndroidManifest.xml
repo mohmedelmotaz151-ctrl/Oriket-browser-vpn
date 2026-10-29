@@ -1,7 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:usesCleartextTraffic="false"
         android:allowBackup="false"
         android:label="Oriket Browser VPN"
         android:icon="@mipmap/ic_launcher"
