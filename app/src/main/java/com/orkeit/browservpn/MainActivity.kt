@@ -11,6 +11,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.view.View
+import android.view.ViewGroup
 import org.json.JSONArray
 import org.json.JSONObject
 import android.os.Bundle
@@ -94,6 +96,7 @@ private fun savePairs(context: Context, key: String, items: List<Pair<String, St
 @Composable
 private fun OriketBrowserApp() {
     val context = LocalContext.current
+    val hostActivity = context as? Activity
     var address by remember { mutableStateOf("") }
     var currentUrl by remember { mutableStateOf<String?>(null) }
     var pageTitle by remember { mutableStateOf("") }
@@ -102,6 +105,7 @@ private fun OriketBrowserApp() {
     var vpnDialog by remember { mutableStateOf(false) }
     var tabsDialog by remember { mutableStateOf(false) }
     var privateMode by remember { mutableStateOf(false) }
+    var zoomLevel by remember { mutableFloatStateOf(1f) }
     var vpnConfig by remember { mutableStateOf(readVpnConfig(context)) }
     var vpnConnected by remember { mutableStateOf(false) }
     var vpnPublicIp by remember { mutableStateOf<String?>(null) }
@@ -173,6 +177,27 @@ private fun OriketBrowserApp() {
             } catch (error: Exception) {
                 vpnStatus = error.localizedMessage ?: "تعذر استيراد الملف"
                 Toast.makeText(context, vpnStatus, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun togglePrivateMode() {
+        val enabling = !privateMode
+        android.webkit.CookieManager.getInstance().removeAllCookies {
+            Handler(Looper.getMainLooper()).post {
+                webView?.apply {
+                    clearHistory()
+                    clearCache(true)
+                    clearFormData()
+                }
+                android.webkit.CookieManager.getInstance().flush()
+                privateMode = enabling
+                zoomLevel = 1f
+                Toast.makeText(
+                    context,
+                    if (enabling) "تم تفعيل التصفح الخفي؛ لن يُحفظ سجل التصفح داخل التطبيق." else "تم إيقاف التصفح الخفي ومسح ملفات الارتباط.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -271,14 +296,7 @@ private fun OriketBrowserApp() {
                 privateMode = privateMode,
                 tabCount = tabCount,
                 onVpn = { vpnDialog = true },
-                onPrivate = {
-                    privateMode = !privateMode
-                    if (!privateMode) {
-                        webView?.clearHistory()
-                        webView?.clearCache(true)
-                        Toast.makeText(context, "الوضع الخاص لا يحفظ السجل؛ قد تظل المواقع تستخدم ملفات تعريف الارتباط.", Toast.LENGTH_LONG).show()
-                    }
-                },
+                onPrivate = { togglePrivateMode() },
                 onTabs = { tabsDialog = true }
             )
 
@@ -309,16 +327,55 @@ private fun OriketBrowserApp() {
                         Icon(Icons.Default.BookmarkBorder, "إضافة للمفضلة", tint = Navy, modifier = Modifier.size(19.dp))
                     }
                 }
-                key(activeTabId) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 12.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text("تكبير الصفحة", color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    IconButton(
+                        onClick = {
+                            val factor = 0.9f
+                            webView?.zoomBy(factor)
+                            zoomLevel = (zoomLevel * factor).coerceAtLeast(0.5f)
+                        },
+                        modifier = Modifier.size(34.dp)
+                    ) { Icon(Icons.Default.Remove, "تصغير الصفحة", tint = Navy) }
+                    Text(
+                        "${(zoomLevel * 100).toInt()}%",
+                        color = Navy,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                            webView?.zoomBy(1f / zoomLevel)
+                            zoomLevel = 1f
+                        }.padding(horizontal = 7.dp, vertical = 4.dp)
+                    )
+                    IconButton(
+                        onClick = {
+                            val factor = 1.1f
+                            webView?.zoomBy(factor)
+                            zoomLevel = (zoomLevel * factor).coerceAtMost(3f)
+                        },
+                        modifier = Modifier.size(34.dp)
+                    ) { Icon(Icons.Default.Add, "تكبير الصفحة", tint = Red) }
+                }
+                key(activeTabId, privateMode) {
                 AndroidView(
                     modifier = Modifier.weight(1f).fillMaxWidth().background(Color.White),
                     factory = { context ->
                         WebView(context).apply {
                             settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
+                            settings.domStorageEnabled = !privateMode
+                            settings.databaseEnabled = !privateMode
+                            settings.saveFormData = !privateMode
+                            settings.cacheMode = if (privateMode) android.webkit.WebSettings.LOAD_NO_CACHE else android.webkit.WebSettings.LOAD_DEFAULT
                             settings.loadsImagesAutomatically = true
                             settings.useWideViewPort = true
                             settings.loadWithOverviewMode = true
+                            settings.setSupportZoom(true)
+                            settings.builtInZoomControls = true
+                            settings.displayZoomControls = false
                             webViewClient = object : WebViewClient() {
                                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                     super.onPageStarted(view, url, favicon)
@@ -345,8 +402,51 @@ private fun OriketBrowserApp() {
                                 }
                             }
                             webChromeClient = object : WebChromeClient() {
+                                private var customVideoView: View? = null
+                                private var customVideoCallback: CustomViewCallback? = null
+                                private var previousSystemUiVisibility: Int = 0
+
                                 override fun onReceivedTitle(view: WebView?, title: String?) {
                                     pageTitle = title.orEmpty()
+                                }
+
+                                override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                                    if (view == null || hostActivity == null) {
+                                        callback?.onCustomViewHidden()
+                                        return
+                                    }
+                                    if (customVideoView != null) {
+                                        onHideCustomView()
+                                        return
+                                    }
+                                    customVideoView = view
+                                    customVideoCallback = callback
+                                    val decor = hostActivity.window.decorView
+                                    previousSystemUiVisibility = decor.systemUiVisibility
+                                    (decor as? ViewGroup)?.addView(
+                                        view,
+                                        ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                    )
+                                    decor.systemUiVisibility = (
+                                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                        )
+                                }
+
+                                override fun onHideCustomView() {
+                                    val view = customVideoView ?: return
+                                    (view.parent as? ViewGroup)?.removeView(view)
+                                    hostActivity?.window?.decorView?.systemUiVisibility = previousSystemUiVisibility
+                                    customVideoView = null
+                                    customVideoCallback?.onCustomViewHidden()
+                                    customVideoCallback = null
                                 }
                             }
                             setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
