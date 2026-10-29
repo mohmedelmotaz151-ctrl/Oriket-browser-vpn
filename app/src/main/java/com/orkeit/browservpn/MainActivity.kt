@@ -322,7 +322,17 @@ private fun OriketBrowserApp() {
                 tabCount = tabCount,
                 onVpn = { vpnDialog = true },
                 onPrivate = { togglePrivateMode() },
-                onTabs = { tabsDialog = true }
+                onTabs = { tabsDialog = true },
+                onCheckUpdates = {
+                    val activity = hostActivity
+                    if (activity != null) {
+                        checkForOriketUpdate(activity) { message ->
+                            Handler(Looper.getMainLooper()).post {
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
             )
 
             AddressBar(
@@ -696,7 +706,8 @@ private fun OriketBrowserApp() {
 @Composable
 private fun Header(
     vpnOn: Boolean, privateMode: Boolean, tabCount: Int,
-    onVpn: () -> Unit, onPrivate: () -> Unit, onTabs: () -> Unit
+    onVpn: () -> Unit, onPrivate: () -> Unit, onTabs: () -> Unit,
+    onCheckUpdates: () -> Unit
 ) {
     Row(
         Modifier.fillMaxWidth().background(Navy).statusBarsPadding().padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 14.dp),
@@ -709,6 +720,9 @@ private fun Header(
         Column(Modifier.weight(1f)) {
             Text("ORIKET", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
             Text("BROWSER  •  VPN", color = Color(0xFFBFC9DB), fontSize = 9.sp, letterSpacing = 1.5.sp)
+        }
+        IconButton(onClick = onCheckUpdates, modifier = Modifier.size(38.dp)) {
+            Icon(Icons.Default.SystemUpdateAlt, "البحث عن تحديثات", tint = Color.White)
         }
         Surface(
             onClick = onVpn, color = NavySoft, shape = RoundedCornerShape(12.dp),
