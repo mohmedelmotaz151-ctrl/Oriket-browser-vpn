@@ -19,7 +19,7 @@ import java.util.Date
  */
 internal class AppOpenAdManager(
     context: Context,
-    private val onAdLoadError: ((LoadAdError) -> Unit)? = null
+    private val onAdLoadError: ((String) -> Unit)? = null
 ) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -71,7 +71,7 @@ internal class AppOpenAdManager(
                     Log.e(TAG, "App-open ad failed to load. Code=${error.code}; domain=${error.domain}; message=${error.message}")
                     if (!reportedLoadError) {
                         reportedLoadError = true
-                        onAdLoadError?.invoke(error)
+                        onAdLoadError?.invoke("تحميل الإعلان فشل — الرمز ${error.code}: ${error.message}")
                     }
                     scheduleRetry()
                 }
@@ -117,7 +117,7 @@ internal class AppOpenAdManager(
                 isShowingAd = false
                 appOpenAd = null
                 Log.e(TAG, "App-open ad failed to show. Code=${error.code}; domain=${error.domain}; message=${error.message}")
-                onAdLoadError?.invoke(LoadAdError(error.code, error.message, error.domain, null, null))
+                onAdLoadError?.invoke("عرض الإعلان فشل — الرمز ${error.code}: ${error.message}")
                 loadAd()
             }
         }
