@@ -119,7 +119,7 @@ internal class AppOpenAdManager(context: Context) {
 
     private companion object {
         const val TAG = "OriketAppOpenAd"
-        const val AD_UNIT_ID = "ca-app-pub-3940256099942544/9257395921"
+        const val AD_UNIT_ID = "ca-app-pub-6392100417582868/9605629838"
         const val FOUR_HOURS_MS = 4 * 60 * 60 * 1000L
         const val RETRY_DELAY_MS = 30_000L
     }
