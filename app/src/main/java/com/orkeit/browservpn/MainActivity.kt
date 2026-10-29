@@ -78,7 +78,11 @@ class MainActivity : ComponentActivity() {
 
         com.google.android.gms.ads.MobileAds.initialize(this) {
             runOnUiThread {
-                val manager = AppOpenAdManager(applicationContext)
+                val manager = AppOpenAdManager(applicationContext) { errorText ->
+                    runOnUiThread {
+                        Toast.makeText(this, errorText, Toast.LENGTH_LONG).show()
+                    }
+                }
                 appOpenAdManager = manager
                 manager.loadAd {
                     // Only present a full-screen ad when the activity is interactive.
