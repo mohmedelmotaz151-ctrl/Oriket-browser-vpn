@@ -40,6 +40,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
     implementation("com.wireguard.android:tunnel:1.0.20260102")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
