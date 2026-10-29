@@ -189,11 +189,6 @@ private fun OriketBrowserApp() {
         val enabling = !privateMode
         android.webkit.CookieManager.getInstance().removeAllCookies {
             Handler(Looper.getMainLooper()).post {
-                webView?.apply {
-                    clearHistory()
-                    clearCache(true)
-                    clearFormData()
-                }
                 android.webkit.CookieManager.getInstance().flush()
                 privateMode = enabling
                 zoomLevel = 1f
